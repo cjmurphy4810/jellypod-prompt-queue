@@ -1,13 +1,10 @@
 {
-  "name": "jellypod-prompt-queue",
-  "version": "1.0.0",
-  "description": "Submit prompts for Jellypod processing and manage a queue.",
-  "main": "server.js",
-  "type": "module",
+  "type": "commonjs",
   "scripts": {
     "start": "node server.js"
   },
   "dependencies": {
+    "cors": "^2.8.5",
     "express": "^4.19.2"
   }
 }
