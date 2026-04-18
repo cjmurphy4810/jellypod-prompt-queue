@@ -1,5 +1,9 @@
 app = "jellypod-prompt-queue"
 
+[build]
+  # Use the provided Dockerfile for building the image.
+  dockerfile = "Dockerfile"
+
 # The port your Node.js server listens on
 [env]
   PORT = "8080"
