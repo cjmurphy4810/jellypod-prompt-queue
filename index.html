@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jellypod Prompt Queue</title>
+<style>
+body{font-family: system-ui, -apple-system, Segoe UI, sans-serif; margin:0; padding:20px; line-height:1.5; color:#111;}
+h1{margin-top:0;}
+fieldset{border:1px solid #ccc; border-radius:8px; padding:16px; margin-bottom:16px;}
+legend{font-weight:600;}
+label{display:block; margin-top:8px;}
+input, textarea{width:100%; box-sizing:border-box; padding:8px; border:1px solid #bbb; border-radius:6px;}
+textarea{min-height:160px; resize:vertical;}
+button{margin-top:12px; padding:10px 14px; border:1px solid #222; background:#222; color:#fff; border-radius:6px; cursor:pointer;}
+button:disabled{opacity:.6; cursor:not-allowed;}
+.small{font-size:12px; color:#555; margin-top:10px;}
+.queue{margin-top:16px;}
+.item{border:1px solid #ddd; padding:10px; border-radius:8px; margin-bottom:10px;}
+.item.done{border-color:#4caf50;}
+.row{display:flex; gap:8px; flex-wrap:wrap; margin-top:8px;}
+.copyTarget{user-select:text;}
+</style>
+</head>
+<body>
+<h1>Jellypod Prompt Queue</h1>
+<p>This page is a thin client. It requires an API server with these endpoints: <code>/api/submit</code>, <code>/api/queue</code>, <code>/api/queue/:id/complete</code>, <code>/api/queue/:id</code>.</p>
+<p class="small">If you host this page on GitHub Pages, set "API base URL" to your deployed server (e.g., <code>https://yourapp.onrender.com</code>). If the API is on the same origin, leave it empty.</p>
+
+<label for="apiBase">API base URL (optional)</label>
+<input id="apiBase" placeholder="https://your-api-host.example.com">
+
+<fieldset>
+<legend>Submit prompt</legend>
+<form id="submitForm">
+<label>Submit key<input id="submitKey" autocomplete="off" required></label>
+<label>Title<input id="title" autocomplete="off" required></label>
+<label>Prompt<textarea id="prompt" required></textarea></label>
+<button type="submit" id="submitBtn">Submit</button>
+<div id="submitMsg" class="small"></div>
+</form>
+</fieldset>
+
+<fieldset>
+<legend>View queue / admin</legend>
+<label>Admin key<input id="adminKey" autocomplete="off"></label>
+<button id="loadBtn">Load queue</button>
+<div id="loadMsg" class="small"></div>
+<div id="queue" class="queue"></div>
+</fieldset>
+
+<script>
+(() => {
+const apiBaseInput = document.getElementById('apiBase');
+function api(url) {
+ const base = (apiBaseInput.value || '').trim().replace(/\/+$/,'');
+ return base ? base + url : url;
+}
+async function toJson(res) {
+ const text = await res.text();
+ try { return JSON.parse(text); } catch (e) { throw new Error(text || res.status); }
+}
+function showMessage(el, msg, ok=true) {
+ el.textContent = msg;
+ el.style.color = ok ? '#0a0' : '#c00';
+}
+document.getElementById('submitForm').addEventListener('submit', async (e) => {
+ e.preventDefault();
+ const key = document.getElementById('submitKey').value.trim();
+ theTitle=document.getElementById('title').value.trim();
+ const prompt = document.getElementById('prompt').value.trim();
+ if (!key || !theTitle || !prompt) return;
+ const btn = document.getElementById('submitBtn');
+ btn.disabled = true;
+ showMessage(document.getElementById('submitMsg'), '');
+ try {
+  const res = await fetch(api('/api/submit'), {
+   method:'POST',
+   headers:{'Content-Type':'application/json'},
+   body: JSON.stringify({key, title:theTitle, prompt})
+  });
+  const data = await toJson(res);
+  if (data.ok) {
+   showMessage(document.getElementById('submitMsg'), 'Submitted. ID: ' + (data.id || ''), true);
+   document.getElementById('title').value='';
+   document.getElementById('prompt').value='';
+  } else {
+   showMessage(document.getElementById('submitMsg'), data.error || 'Submit failed', false);
+  }
+ } catch (err) {
+  showMessage(document.getElementById('submitMsg'), err.message || String(err), false);
+ } finally {
+  btn.disabled = false;
+ }
+});
+document.getElementById('loadBtn').addEventListener('click', loadQueue);
+async function loadQueue() {
+ const adminKey = document.getElementById('adminKey').value.trim();
+ if (!adminKey) return showMessage(document.getElementById('loadMsg'), 'Admin key required', false);
+ showMessage(document.getElementById('loadMsg'), 'Loading…', true);
+ const q = document.getElementById('queue');
+ q.innerHTML='';
+ try {
+  const res = await fetch(api('/api/queue?key=') + encodeURIComponent(adminKey));
+  const data = await toJson(res);
+  if (!data.ok) throw new Error(data.error || 'Load failed');
+  showMessage(document.getElementById('loadMsg'), 'Loaded ' + data.queue.length + ' item(s)', true);
+  renderQueue(data.queue);
+ } catch (err) {
+  showMessage(document.getElementById('loadMsg'), err.message || String(err), false);
+ }
+}
+function renderQueue(items) {
+ const q = document.getElementById('queue');
+ q.innerHTML='';
+ (items || []).forEach(item => {
+  const div = document.createElement('div');
+  div.className = 'item' + (item.done ? ' done' : '');
+  const created = item.createdAt ? new Date(item.createdAt).toLocaleString() : '';
+  div.innerHTML = `
+    <div><strong>${escapeHtml(item.title || '')}</strong></div>
+    <div class="small">${item.done ? '✅ Done' : '🟡 Pending'}${created ? ' • ' + escapeHtml(created) : ''}</div>
+    <pre class="copyTarget" style="white-space:pre-wrap;">${escapeHtml(item.prompt || '')}</pre>
+    <div class="row">
+      <button type="button" data-action="copy" data-id="${item.id}">Copy title</button>
+      <button type="button" data-action="copyPrompt" data-id="${item.id}">Copy prompt</button>
+      <button type="button" data-action="complete" data-id="${item.id}">Complete</button>
+      <button type="button" data-action="delete" data-id="${item.id}">Delete</button>
+    </div>
+  `;
+  q.appendChild(div);
+ });
+ q.addEventListener('click', async (e) => {
+  const btn = e.target.closest('button');
+  if (!btn) return;
+  const id = btn.dataset.id;
+  const action = btn.dataset.action;
+  const adminKey = document.getElementById('adminKey').value.trim();
+  if (!adminKey) return showMessage(document.getElementById('loadMsg'), 'Admin key required', false);
+  const item = items.find(x => String(x.id) === String(id));
+  try {
+   if (action === 'copy') await navigator.clipboard.writeText(item.title || '');
+   if (action === 'copyPrompt') await navigator.clipboard.writeText(item.prompt || '');
+   if (action === 'complete') await callAdmin(`/api/queue/${encodeURIComponent(id)}/complete?key=${encodeURIComponent(adminKey)}`);
+   if (action === 'delete') await callAdmin(`/api/queue/${encodeURIComponent(id)}?key=${encodeURIComponent(adminKey)}`, {method:'DELETE'});
+  } catch (err) {
+   showMessage(document.getElementById('loadMsg'), err.message || String(err), false);
+   return;
+  }
+  if (action === 'complete' || action === 'delete') loadQueue();
+ });
+}
+async function callAdmin(path, init={}) {
+ const res = await fetch(api(path), {method:init.method || 'POST', headers:{'Content-Type':'application/json'}, ...init});
+ const data = await toJson(res);
+ if (!data.ok) throw new Error(data.error || 'Request failed');
+}
+function escapeHtml(str) {
+ return String(str)
+   .replaceAll('&','&amp;')
+   .replaceAll('<','&lt;')
+   .replaceAll('>','&gt;')
+   .replaceAll('"','&quot;')
+   .replaceAll("'", '&#39;');
+}
+})();
+</script>
+</body>
+</html>
