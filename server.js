@@ -3,6 +3,7 @@ const cors = require('cors');
 const https = require('node:https');
 const { Buffer } = require('node:buffer');
 const { randomUUID } = require('crypto');
+const path = require('path');
 
 const app = express();
 
@@ -105,7 +106,7 @@ async function updateQueue(mutator) {
 // ---------------- ROUTES ----------------
 
 app.get('/', (_req, res) => {
-  res.status(200).send('OK');
+  res.sendFile(path.join(__dirname, 'index.html'));
 });
 
 app.get('/healthz', (_req, res) => {
