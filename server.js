@@ -22,12 +22,13 @@ const GH_BRANCH = process.env.GITHUB_BRANCH    || 'main';
 let ghSha = null;
 
 // ---------------- GITHUB REQUEST ----------------
-function ghRequest(path, method = 'GET', body = null) {
+// Rejects on non-2xx so callers detect GitHub errors instead of silently failing
+function ghRequest(ghPath, method = 'GET', body = null) {
   return new Promise((resolve, reject) => {
     const req = https.request(
       {
         hostname: 'api.github.com',
-        path,
+        path: ghPath,
         method,
         headers: {
           Authorization: `Bearer ${GH_TOKEN}`,
@@ -39,15 +40,15 @@ function ghRequest(path, method = 'GET', body = null) {
         let data = '';
         res.on('data', (d) => (data += d));
         res.on('end', () => {
-          try {
-            resolve(JSON.parse(data));
-          } catch {
-            resolve({});
+          let json = {};
+          try { json = JSON.parse(data); } catch { /* ignore */ }
+          if (res.statusCode < 200 || res.statusCode > 299) {
+            return reject(new Error(json.message || `GitHub API error ${res.statusCode}`));
           }
+          resolve(json);
         });
       }
     );
-
     req.on('error', reject);
     if (body) req.write(JSON.stringify(body));
     req.end();
@@ -56,10 +57,9 @@ function ghRequest(path, method = 'GET', body = null) {
 
 // ---------------- LOAD ----------------
 async function loadQueue() {
-  const path = `/repos/${GH_OWNER}/${GH_REPO}/contents/${GH_PATH}?ref=${GH_BRANCH}`;
-
+  const ghPath = `/repos/${GH_OWNER}/${GH_REPO}/contents/${GH_PATH}?ref=${GH_BRANCH}`;
   try {
-    const res = await ghRequest(path);
+    const res = await ghRequest(ghPath);
     ghSha = res.sha;
     const decoded = Buffer.from(res.content, 'base64').toString();
     const parsed  = JSON.parse(decoded);
@@ -72,35 +72,30 @@ async function loadQueue() {
 
 // ---------------- SAVE ----------------
 async function saveQueue(queue) {
-  const path = `/repos/${GH_OWNER}/${GH_REPO}/contents/${GH_PATH}`;
-
+  const ghPath = `/repos/${GH_OWNER}/${GH_REPO}/contents/${GH_PATH}`;
   const body = {
     message: 'update queue',
     content: Buffer.from(JSON.stringify(queue, null, 2)).toString('base64'),
     branch:  GH_BRANCH,
   };
-
   if (ghSha) body.sha = ghSha;
-
-  const res = await ghRequest(path, 'PUT', body);
+  const res = await ghRequest(ghPath, 'PUT', body);
   ghSha = res.content?.sha;
 }
 
 // ---------------- SAFE MUTATION ----------------
 async function updateQueue(mutator) {
   for (let i = 0; i < 5; i++) {
-    const q      = await loadQueue();
-    const result = mutator(q);
-
+    const q = await loadQueue();
+    mutator(q);
     try {
       await saveQueue(q);
-      return result;
+      return;
     } catch {
-      ghSha = null; // force re-fetch sha on next retry
+      ghSha = null;
     }
   }
-
-  throw new Error('Failed after retries');
+  throw new Error('Could not save — check GitHub token and repo settings');
 }
 
 // ---------------- ROUTES ----------------
@@ -113,58 +108,59 @@ app.get('/healthz', (_req, res) => {
   res.json({ ok: true });
 });
 
-// Submit a new prompt
 app.post('/api/submit', async (req, res) => {
-  const { key, title, prompt } = req.body;
-  if (key !== SUBMIT_KEY) return res.status(401).json({ ok: false, error: 'Invalid submit key' });
-
-  const item = {
-    id:        randomUUID(),
-    title,
-    prompt,
-    done:      false,
-    createdAt: Date.now(),
-  };
-
-  await updateQueue((q) => q.push(item));
-  res.json({ ok: true });
+  try {
+    const { key, title, prompt } = req.body;
+    if (key !== SUBMIT_KEY) return res.status(401).json({ ok: false, error: 'Invalid submit key' });
+    const item = { id: randomUUID(), title, prompt, done: false, createdAt: Date.now() };
+    await updateQueue((q) => q.push(item));
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Submit error:', err.message);
+    res.status(500).json({ ok: false, error: err.message });
+  }
 });
 
-// Load the queue (admin)
 app.get('/api/queue', async (req, res) => {
-  if (req.query.key !== ADMIN_KEY) return res.status(401).json({ ok: false, error: 'Invalid admin key' });
-
-  const q = await loadQueue();
-  res.json({ ok: true, queue: q });
+  try {
+    if (req.query.key !== ADMIN_KEY) return res.status(401).json({ ok: false, error: 'Invalid admin key' });
+    const q = await loadQueue();
+    res.json({ ok: true, queue: q });
+  } catch (err) {
+    console.error('Load error:', err.message);
+    res.status(500).json({ ok: false, error: err.message });
+  }
 });
 
-// Mark an item complete (admin)  ← THIS WAS MISSING
 app.post('/api/queue/:id/complete', async (req, res) => {
-  if (req.query.key !== ADMIN_KEY) return res.status(401).json({ ok: false, error: 'Invalid admin key' });
-
-  await updateQueue((q) => {
-    const item = q.find((x) => x.id === req.params.id);
-    if (item) item.done = true;
-  });
-
-  res.json({ ok: true });
+  try {
+    if (req.query.key !== ADMIN_KEY) return res.status(401).json({ ok: false, error: 'Invalid admin key' });
+    await updateQueue((q) => {
+      const item = q.find((x) => x.id === req.params.id);
+      if (item) item.done = true;
+    });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Complete error:', err.message);
+    res.status(500).json({ ok: false, error: err.message });
+  }
 });
 
-// Delete an item (admin)
 app.delete('/api/queue/:id', async (req, res) => {
-  if (req.query.key !== ADMIN_KEY) return res.status(401).json({ ok: false, error: 'Invalid admin key' });
-
-  await updateQueue((q) => {
-    const i = q.findIndex((x) => x.id === req.params.id);
-    if (i >= 0) q.splice(i, 1);
-  });
-
-  res.json({ ok: true });
+  try {
+    if (req.query.key !== ADMIN_KEY) return res.status(401).json({ ok: false, error: 'Invalid admin key' });
+    await updateQueue((q) => {
+      const i = q.findIndex((x) => x.id === req.params.id);
+      if (i >= 0) q.splice(i, 1);
+    });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Delete error:', err.message);
+    res.status(500).json({ ok: false, error: err.message });
+  }
 });
 
-// ---------------- START ----------------
 const PORT = process.env.PORT || 8080;
-
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Running on port ${PORT}`);
 });

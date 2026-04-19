@@ -1,4 +1,4 @@
- <!doctype html>
+<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
@@ -30,10 +30,7 @@
       border-radius: 6px;
       font: inherit;
     }
-    textarea {
-      min-height: 160px;
-      resize: vertical;
-    }
+    textarea { min-height: 160px; resize: vertical; }
     button {
       margin-top: 12px;
       padding: 10px 14px;
@@ -44,15 +41,10 @@
       cursor: pointer;
       font: inherit;
     }
-    button:disabled {
-      opacity: .6;
-      cursor: not-allowed;
-    }
-    .small {
-      font-size: 12px;
-      color: #555;
-      margin-top: 10px;
-    }
+    button:disabled { opacity: .6; cursor: not-allowed; }
+    .msg { font-size: 13px; margin-top: 10px; min-height: 18px; }
+    .ok  { color: #0a0; }
+    .err { color: #c00; }
     .queue { margin-top: 16px; }
     .item {
       border: 1px solid #ddd;
@@ -61,36 +53,17 @@
       margin-bottom: 10px;
     }
     .item.done { border-color: #4caf50; }
-    .row {
-      display: flex;
-      gap: 8px;
-      flex-wrap: wrap;
-      margin-top: 8px;
-    }
-    pre {
-      margin: 8px 0 0 0;
-      white-space: pre-wrap;
-    }
-    .status-ok { color: #0a0; }
-    .status-err { color: #c00; }
-    .debug {
-      background: #f7f7f7;
-      border: 1px solid #ddd;
-      border-radius: 6px;
-      padding: 10px;
-      margin-top: 10px;
-      font-size: 12px;
-      white-space: pre-wrap;
-      word-break: break-word;
-    }
+    .row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+    pre { margin: 8px 0 0 0; white-space: pre-wrap; }
+    .meta { font-size: 12px; color: #555; }
   </style>
 </head>
 <body>
   <h1>Jellypod Prompt Queue</h1>
 
-  <p class="small">
+  <p class="meta">
     Submitters: enter the Submit Key, Title, and Prompt, then click <strong>Submit</strong>.<br>
-    Admin: enter the Admin Key, click <strong>Load queue</strong>, then copy / complete / delete as needed.
+    Admin: enter the Admin Key and click <strong>Load queue</strong>.
   </p>
 
   <fieldset>
@@ -106,8 +79,7 @@
         <textarea id="prompt" required></textarea>
       </label>
       <button type="submit" id="submitBtn">Submit</button>
-      <div id="submitMsg" class="small"></div>
-      <div id="submitDebug" class="debug" style="display:none;"></div>
+      <div id="submitMsg" class="msg"></div>
     </form>
   </fieldset>
 
@@ -117,8 +89,7 @@
       <input id="adminKey" type="password" placeholder="Enter admin key" autocomplete="off">
     </label>
     <button id="loadBtn" type="button">Load queue</button>
-    <div id="loadMsg" class="small"></div>
-    <div id="loadDebug" class="debug" style="display:none;"></div>
+    <div id="loadMsg" class="msg"></div>
     <div id="queue" class="queue"></div>
   </fieldset>
 
@@ -126,255 +97,152 @@
     (() => {
       const API_BASE = 'https://jellypod-prompt-queue.fly.dev';
 
-      function api(path) {
-        const base = API_BASE.trim().replace(/\/+$/, '');
-        const suffix = path.startsWith('/') ? path : '/' + path;
-        return base + suffix;
+      function api(p) {
+        return API_BASE.replace(/\/+$/, '') + (p.startsWith('/') ? p : '/' + p);
       }
 
-      function showMessage(el, msg, ok = true) {
-        el.textContent = msg;
-        el.className = 'small ' + (ok ? 'status-ok' : 'status-err');
+      function msg(el, text, ok = true) {
+        el.textContent = text;
+        el.className = 'msg ' + (ok ? 'ok' : 'err');
       }
 
-      function showDebug(el, data) {
-        if (!data) {
-          el.style.display = 'none';
-          el.textContent = '';
-          return;
-        }
-        el.style.display = 'block';
-        el.textContent = data;
+      function escapeHtml(str) {
+        return String(str)
+          .replaceAll('&', '&amp;').replaceAll('<', '&lt;')
+          .replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#39;');
       }
 
-      async function readResponse(res) {
-        const text = await res.text();
-        let json = null;
-        try {
-          json = text ? JSON.parse(text) : null;
-        } catch (_) {}
-        return { text, json };
-      }
-
-      async function fetchWithTimeout(url, init = {}, timeoutMs = 15000) {
+      async function callJson(url, init = {}) {
         const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), timeoutMs);
-
+        const timer = setTimeout(() => controller.abort(), 15000);
         try {
-          return await fetch(url, {
-            ...init,
-            mode: 'cors',
-            signal: controller.signal
-          });
+          const res = await fetch(url, { ...init, mode: 'cors', signal: controller.signal });
+          const text = await res.text();
+          const json = text ? JSON.parse(text) : {};
+          if (!res.ok) throw new Error(json.error || json.message || `Server error (${res.status})`);
+          return json;
+        } catch (err) {
+          if (err.name === 'AbortError') throw new Error('Request timed out');
+          if (err instanceof TypeError) throw new Error('Could not reach server');
+          throw err;
         } finally {
           clearTimeout(timer);
         }
       }
 
-      function escapeHtml(str) {
-        return String(str)
-          .replaceAll('&', '&amp;')
-          .replaceAll('<', '&lt;')
-          .replaceAll('>', '&gt;')
-          .replaceAll('"', '&quot;')
-          .replaceAll("'", '&#39;');
-      }
-
-      async function callJson(url, init = {}) {
-        try {
-          const res = await fetchWithTimeout(url, init, 15000);
-          const { text, json } = await readResponse(res);
-
-          if (!res.ok) {
-            const msg =
-              (json && (json.error || json.message)) ||
-              text ||
-              `HTTP ${res.status}`;
-            throw new Error(msg);
-          }
-
-          return json ?? {};
-        } catch (err) {
-          if (err.name === 'AbortError') {
-            throw new Error('Request timed out reaching Fly app');
-          }
-
-          if (err instanceof TypeError) {
-            throw new Error('Network error reaching Fly app (likely CORS, app not running, or wrong Fly URL)');
-          }
-
-          throw err;
-        }
-      }
-
+      // ---- Submit ----
       document.getElementById('submitForm').addEventListener('submit', async (e) => {
         e.preventDefault();
-
-        const key = document.getElementById('submitKey').value.trim();
-        const title = document.getElementById('title').value.trim();
+        const key    = document.getElementById('submitKey').value.trim();
+        const title  = document.getElementById('title').value.trim();
         const prompt = document.getElementById('prompt').value.trim();
-        const btn = document.getElementById('submitBtn');
-        const msgEl = document.getElementById('submitMsg');
-        const dbgEl = document.getElementById('submitDebug');
-
+        const btn    = document.getElementById('submitBtn');
+        const msgEl  = document.getElementById('submitMsg');
         if (!key || !title || !prompt) return;
-
         btn.disabled = true;
-        showMessage(msgEl, '');
-        showDebug(dbgEl, '');
-
-        const url = api('/api/submit');
-
+        msg(msgEl, 'Submitting…');
         try {
-          const data = await callJson(url, {
+          const data = await callJson(api('/api/submit'), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ key, title, prompt })
+            body: JSON.stringify({ key, title, prompt }),
           });
-
           if (data.ok) {
-            showMessage(msgEl, 'Submitted successfully.', true);
-            showDebug(dbgEl, `POST ${url}\nResponse: ${JSON.stringify(data, null, 2)}`);
+            msg(msgEl, 'Submitted successfully.', true);
             document.getElementById('title').value = '';
             document.getElementById('prompt').value = '';
           } else {
-            showMessage(msgEl, data.error || 'Submit failed', false);
-            showDebug(dbgEl, `POST ${url}\nResponse: ${JSON.stringify(data, null, 2)}`);
+            msg(msgEl, data.error || 'Submit failed', false);
           }
         } catch (err) {
-          showMessage(msgEl, err.message || String(err), false);
-          showDebug(
-            dbgEl,
-            `POST ${url}\n` +
-            `Browser page: ${location.href}\n` +
-            `API_BASE: ${API_BASE}\n` +
-            `Error: ${err.message || String(err)}`
-          );
+          msg(msgEl, err.message, false);
         } finally {
           btn.disabled = false;
         }
       });
 
+      // ---- Load queue ----
       document.getElementById('loadBtn').addEventListener('click', loadQueue);
 
       async function loadQueue() {
         const adminKey = document.getElementById('adminKey').value.trim();
-        const msgEl = document.getElementById('loadMsg');
-        const dbgEl = document.getElementById('loadDebug');
-        const q = document.getElementById('queue');
-
-        if (!adminKey) {
-          showMessage(msgEl, 'Admin key required', false);
-          return;
-        }
-
+        const msgEl    = document.getElementById('loadMsg');
+        const q        = document.getElementById('queue');
+        if (!adminKey) { msg(msgEl, 'Admin key required', false); return; }
         q.innerHTML = '';
-        showMessage(msgEl, 'Loading…', true);
-        showDebug(dbgEl, '');
-
-        const url = api('/api/queue?key=') + encodeURIComponent(adminKey);
-
+        msg(msgEl, 'Loading…');
         try {
-          const data = await callJson(url, { method: 'GET' });
-
+          const data = await callJson(api('/api/queue?key=') + encodeURIComponent(adminKey));
           if (!data.ok) throw new Error(data.error || 'Load failed');
-
-          showMessage(msgEl, `Loaded ${data.queue?.length || 0} item(s)`, true);
-          showDebug(dbgEl, `GET ${url}\nResponse: ${JSON.stringify(data, null, 2)}`);
+          msg(msgEl, `Loaded ${data.queue?.length || 0} item(s)`, true);
           renderQueue(data.queue || []);
         } catch (err) {
-          showMessage(msgEl, err.message || String(err), false);
-          showDebug(
-            dbgEl,
-            `GET ${url}\n` +
-            `Browser page: ${location.href}\n` +
-            `API_BASE: ${API_BASE}\n` +
-            `Error: ${err.message || String(err)}`
-          );
+          msg(msgEl, err.message, false);
         }
       }
 
+      // ---- Render ----
       function renderQueue(items) {
         const q = document.getElementById('queue');
         q.innerHTML = '';
-
+        if (items.length === 0) {
+          q.innerHTML = '<p class="meta">Queue is empty.</p>';
+          return;
+        }
         items.forEach(item => {
           const div = document.createElement('div');
           div.className = 'item' + (item.done ? ' done' : '');
           const created = item.createdAt ? new Date(item.createdAt).toLocaleString() : '';
-
           div.innerHTML = `
             <div><strong>${escapeHtml(item.title || '')}</strong></div>
-            <div class="small">${item.done ? '✅ Done' : '🟡 Pending'}${created ? ' • ' + escapeHtml(created) : ''}</div>
+            <div class="meta">${item.done ? '✅ Done' : '🟡 Pending'}${created ? ' &bull; ' + escapeHtml(created) : ''}</div>
             <pre>${escapeHtml(item.prompt || '')}</pre>
             <div class="row">
-              <button type="button" data-action="copyTitle" data-id="${escapeHtml(item.id || '')}">Copy title</button>
-              <button type="button" data-action="copyPrompt" data-id="${escapeHtml(item.id || '')}">Copy prompt</button>
-              <button type="button" data-action="complete" data-id="${escapeHtml(item.id || '')}">Complete</button>
-              <button type="button" data-action="delete" data-id="${escapeHtml(item.id || '')}">Delete</button>
-            </div>
-          `;
-
+              <button type="button" data-action="copyTitle"  data-id="${escapeHtml(item.id)}">Copy title</button>
+              <button type="button" data-action="copyPrompt" data-id="${escapeHtml(item.id)}">Copy prompt</button>
+              <button type="button" data-action="complete"   data-id="${escapeHtml(item.id)}">Complete</button>
+              <button type="button" data-action="delete"     data-id="${escapeHtml(item.id)}">Delete</button>
+            </div>`;
           q.appendChild(div);
         });
 
         q.onclick = async (event) => {
-          const btn = event.target.closest('button');
+          const btn      = event.target.closest('button');
           if (!btn) return;
-
-          const action = btn.dataset.action;
-          const id = btn.dataset.id;
+          const action   = btn.dataset.action;
+          const id       = btn.dataset.id;
           const adminKey = document.getElementById('adminKey').value.trim();
-          const msgEl = document.getElementById('loadMsg');
-          const dbgEl = document.getElementById('loadDebug');
-
-          const item = items.find(x => String(x.id) === String(id));
-          if (!item && (action === 'copyTitle' || action === 'copyPrompt')) return;
+          const msgEl    = document.getElementById('loadMsg');
+          const item     = items.find(x => String(x.id) === String(id));
 
           try {
             if (action === 'copyTitle') {
-              await navigator.clipboard.writeText(item.title || '');
-              showMessage(msgEl, 'Title copied', true);
+              await navigator.clipboard.writeText(item?.title || '');
+              msg(msgEl, 'Title copied', true);
               return;
             }
-
             if (action === 'copyPrompt') {
-              await navigator.clipboard.writeText(item.prompt || '');
-              showMessage(msgEl, 'Prompt copied', true);
+              await navigator.clipboard.writeText(item?.prompt || '');
+              msg(msgEl, 'Prompt copied', true);
               return;
             }
+            if (!adminKey) { msg(msgEl, 'Admin key required', false); return; }
 
-            if (!adminKey) {
-              showMessage(msgEl, 'Admin key required', false);
-              return;
-            }
-
-            let url = '';
-            let method = 'POST';
-
+            let url, method;
             if (action === 'complete') {
-              url = api(`/api/queue/${encodeURIComponent(id)}/complete?key=${encodeURIComponent(adminKey)}`);
+              url    = api(`/api/queue/${encodeURIComponent(id)}/complete?key=${encodeURIComponent(adminKey)}`);
               method = 'POST';
             } else if (action === 'delete') {
-              url = api(`/api/queue/${encodeURIComponent(id)}?key=${encodeURIComponent(adminKey)}`);
+              url    = api(`/api/queue/${encodeURIComponent(id)}?key=${encodeURIComponent(adminKey)}`);
               method = 'DELETE';
-            } else {
-              return;
-            }
+            } else return;
 
-            const data = await callJson(url, {
-              method,
-              headers: { 'Content-Type': 'application/json' }
-            });
-
+            const data = await callJson(url, { method, headers: { 'Content-Type': 'application/json' } });
             if (!data.ok) throw new Error(data.error || 'Request failed');
-
-            showMessage(msgEl, action === 'complete' ? 'Marked complete' : 'Deleted', true);
-            showDebug(dbgEl, `${method} ${url}\nResponse: ${JSON.stringify(data, null, 2)}`);
+            msg(msgEl, action === 'complete' ? 'Marked complete' : 'Deleted', true);
             loadQueue();
           } catch (err) {
-            showMessage(msgEl, err.message || String(err), false);
-            showDebug(dbgEl, err.message || String(err));
+            msg(msgEl, err.message, false);
           }
         };
       }
