@@ -3,250 +3,609 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Jellypod Prompt Queue</title>
+  <title>THWF Shared Queue</title>
   <style>
+    :root {
+      --bg1: #07111f;
+      --bg2: #0c1424;
+      --card: rgba(15, 23, 42, 0.92);
+      --border: #263557;
+      --text: #eef2ff;
+      --muted: #a7b0c7;
+      --input: #182239;
+      --primary: #2f62d8;
+      --primary-hover: #3c73ef;
+      --danger: #b42335;
+      --danger-hover: #ca3145;
+      --warning: #9a7700;
+      --warning-hover: #b08800;
+      --success: #1db86d;
+      --shadow: 0 18px 50px rgba(0,0,0,.35);
+      --radius: 24px;
+    }
+    * { box-sizing: border-box; }
     body {
-      font-family: system-ui, -apple-system, Segoe UI, sans-serif;
       margin: 0;
-      padding: 20px;
-      line-height: 1.5;
-      color: #111;
-      max-width: 1000px;
+      font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at top, rgba(47, 98, 216, 0.18), transparent 30%),
+        linear-gradient(180deg, #020814 0%, #07111f 100%);
+      min-height: 100vh;
     }
-    h1 { margin-top: 0; }
-    fieldset {
-      border: 1px solid #ccc;
-      border-radius: 8px;
-      padding: 16px;
-      margin-bottom: 16px;
-    }
-    legend { font-weight: 600; }
-    label { display: block; margin-top: 8px; }
-    input, textarea {
-      width: 100%;
-      box-sizing: border-box;
-      padding: 8px;
-      border: 1px solid #bbb;
-      border-radius: 6px;
-      font: inherit;
-    }
-    textarea { min-height: 160px; resize: vertical; }
-    button {
-      margin-top: 12px;
-      padding: 10px 14px;
-      border: 1px solid #222;
-      background: #222;
-      color: #fff;
-      border-radius: 6px;
+    .wrap { max-width: 1360px; margin: 0 auto; padding: 40px 28px 56px; }
+    h1 { font-size: 52px; line-height: 1.02; margin: 0 0 18px; letter-spacing: -.03em; }
+    .intro { color: var(--muted); font-size: 21px; max-width: 1300px; margin-bottom: 22px; }
+    .meta { color: #c6cde0; font-size: 18px; margin-bottom: 24px; }
+    .tabs { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 24px; }
+    .tab-btn {
+      background: rgba(19, 29, 50, 0.92);
+      border: 1px solid #2a3a5f;
+      color: var(--text);
+      border-radius: 999px;
+      padding: 12px 18px;
+      font-size: 16px;
+      font-weight: 800;
       cursor: pointer;
-      font: inherit;
     }
-    button:disabled { opacity: .6; cursor: not-allowed; }
-    .msg { font-size: 13px; margin-top: 10px; min-height: 18px; }
-    .ok  { color: #0a0; }
-    .err { color: #c00; }
-    .queue { margin-top: 16px; }
+    .tab-btn.active { background: var(--primary); border-color: var(--primary); }
+    .panel.hidden { display: none; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: start; }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 26px;
+      box-shadow: var(--shadow);
+    }
+    h2 { margin: 0 0 18px; font-size: 30px; letter-spacing: -.02em; }
+    .field { margin-bottom: 16px; }
+    label { display: block; font-size: 17px; font-weight: 700; margin-bottom: 8px; }
+    input[type="text"], input[type="password"], input[type="date"], textarea, select {
+      width: 100%; border: 1px solid #2a3a5f; background: var(--input); color: var(--text);
+      border-radius: 16px; padding: 16px 15px; font-size: 16px; outline: none;
+    }
+    textarea { min-height: 230px; resize: vertical; }
+    input::placeholder, textarea::placeholder { color: #8d96ad; }
+    .row { display: flex; gap: 14px; flex-wrap: wrap; }
+    .row > .grow { flex: 1 1 220px; }
+    button {
+      border: 1px solid #32415f; background: transparent; color: var(--text); border-radius: 16px;
+      padding: 13px 18px; font-size: 16px; font-weight: 700; cursor: pointer;
+    }
+    button.primary { background: var(--primary); border-color: var(--primary); }
+    button.primary:hover { background: var(--primary-hover); }
+    button.warning { background: var(--warning); border-color: var(--warning); }
+    button.warning:hover { background: var(--warning-hover); }
+    button.danger { background: var(--danger); border-color: var(--danger); }
+    button.danger:hover { background: var(--danger-hover); }
+    .msg { min-height: 28px; margin-top: 14px; font-size: 17px; }
+    .msg.ok { color: #29e384; }
+    .msg.err { color: #ff7b8c; }
+    .small { color: var(--muted); font-size: 16px; line-height: 1.4; }
+    .queue-wrap { margin-top: 24px; }
+    .stats { color: #c6cde0; font-size: 17px; margin-top: -10px; margin-bottom: 14px; }
+    .empty { color: var(--muted); font-size: 17px; }
     .item {
-      border: 1px solid #ddd;
-      padding: 10px;
-      border-radius: 8px;
-      margin-bottom: 10px;
+      background: rgba(19, 29, 50, 0.92); border: 1px solid #2a3a5f; border-radius: 18px;
+      padding: 18px; margin-bottom: 14px;
     }
-    .item.done { border-color: #4caf50; }
-    .row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
-    pre { margin: 8px 0 0 0; white-space: pre-wrap; }
-    .meta { font-size: 12px; color: #555; }
+    .title-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .item-title { font-size: 21px; font-weight: 800; }
+    .badge {
+      font-size: 13px; font-weight: 800; border-radius: 999px; padding: 6px 12px; border: 1px solid;
+    }
+    .badge.pending { color: #ffdd7d; border-color: #7e6510; background: rgba(126,101,16,.16); }
+    .badge.complete { color: #7ef0b1; border-color: #1b7d49; background: rgba(27,125,73,.16); }
+    .stamp { color: var(--muted); margin: 6px 0 14px; font-size: 15px; }
+    .detail-grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; margin-bottom: 12px;
+    }
+    .detail {
+      background: #101826; border: 1px solid #24324e; border-radius: 12px; padding: 10px 12px;
+    }
+    .detail .k { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+    .detail .v { color: #e7ebf8; font-size: 15px; font-weight: 600; margin-top: 4px; }
+    .prompt {
+      white-space: pre-wrap; background: #101826; border: 1px solid #24324e; border-radius: 14px;
+      padding: 14px; color: #e7ebf8; margin-bottom: 14px; font-size: 16px;
+    }
+    .lock-screen {
+      position: fixed; inset: 0; background: rgba(1, 6, 14, 0.86); backdrop-filter: blur(10px);
+      display: flex; align-items: center; justify-content: center; z-index: 9999; padding: 24px;
+    }
+    .lock-card {
+      max-width: 520px; width: 100%; background: var(--card); border: 1px solid var(--border);
+      border-radius: 28px; padding: 28px; box-shadow: var(--shadow);
+    }
+    .lock-card h2 { font-size: 34px; }
+    .hidden { display: none !important; }
+    @media (max-width: 980px) {
+      .grid { grid-template-columns: 1fr; }
+      h1 { font-size: 40px; }
+      .intro { font-size: 18px; }
+    }
   </style>
 </head>
 <body>
-  <h1>Jellypod Prompt Queue</h1>
+  <div id="lockScreen" class="lock-screen">
+    <div class="lock-card">
+      <h2>Unlock app</h2>
+      <p class="small">Enter the shared admin code. This unlocks both the podcast queue and the promotions tracker.</p>
+      <div class="field">
+        <label for="accessCode">Admin code</label>
+        <input id="accessCode" type="password" placeholder="Enter admin code" autocomplete="off">
+      </div>
+      <div class="row">
+        <button class="primary" id="unlockBtn">Unlock</button>
+      </div>
+      <div id="lockMsg" class="msg"></div>
+    </div>
+  </div>
 
-  <p class="meta">
-    Submitters: enter the Submit Key, Title, and Prompt, then click <strong>Submit</strong>.<br>
-    Admin: enter the Admin Key and click <strong>Load queue</strong>.
-  </p>
+  <div class="wrap">
+    <h1>THWF Shared Operations Console</h1>
+    <div class="intro">This version uses GitHub Pages for the front end and a free Cloudflare Worker as the shared API. Both modules use the same secure login and the same remote shared store, so users on different devices will see the same records after refresh.</div>
+    <div class="meta">No Fly.io • Shared records across sessions • One shared login</div>
 
-  <fieldset>
-    <legend>Submit prompt</legend>
-    <form id="submitForm">
-      <label>Submit key
-        <input id="submitKey" autocomplete="off" required>
-      </label>
-      <label>Title
-        <input id="title" autocomplete="off" required>
-      </label>
-      <label>Prompt
-        <textarea id="prompt" required></textarea>
-      </label>
-      <button type="submit" id="submitBtn">Submit</button>
-      <div id="submitMsg" class="msg"></div>
-    </form>
-  </fieldset>
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="podcast">Podcast Prompt Queue</button>
+      <button class="tab-btn" data-tab="promotions">Promotions Tracker</button>
+    </div>
 
-  <fieldset>
-    <legend>View queue / admin</legend>
-    <label>Admin key
-      <input id="adminKey" type="password" placeholder="Enter admin key" autocomplete="off">
-    </label>
-    <button id="loadBtn" type="button">Load queue</button>
-    <div id="loadMsg" class="msg"></div>
-    <div id="queue" class="queue"></div>
-  </fieldset>
+    <section class="panel" id="panel-podcast">
+      <div class="grid">
+        <section class="card">
+          <h2>Submit podcast prompt</h2>
+          <div class="field">
+            <label for="podcastTitle">Title</label>
+            <input id="podcastTitle" type="text" placeholder="Episode title or prompt title">
+          </div>
+          <div class="field">
+            <label for="hostNames">Host Names <span class="small">(optional, max 30 characters)</span></label>
+            <input id="hostNames" type="text" maxlength="30" placeholder="Simon, Lachlan, Jack">
+          </div>
+          <div class="field">
+            <label for="podcastPrompt">Prompt</label>
+            <textarea id="podcastPrompt" placeholder="Enter the long-form prompt here"></textarea>
+          </div>
+          <div class="row">
+            <button class="primary" id="podcastSubmitBtn">Submit</button>
+            <button id="podcastClearBtn">Clear form</button>
+          </div>
+          <div id="podcastSubmitMsg" class="msg"></div>
+          <p class="small">New submissions are automatically marked <strong>pending</strong>.</p>
+        </section>
+
+        <section class="card">
+          <h2>Podcast queue controls</h2>
+          <div class="row">
+            <div class="grow field">
+              <label for="podcastFilter">Filter</label>
+              <select id="podcastFilter">
+                <option value="all">All</option>
+                <option value="pending">Pending</option>
+                <option value="complete">Complete</option>
+              </select>
+            </div>
+          </div>
+          <div class="row">
+            <button class="primary" id="podcastRefreshBtn">Refresh queue</button>
+            <button class="danger" id="podcastDeleteCompletedBtn">Delete completed</button>
+            <button id="lockBtn">Lock app</button>
+          </div>
+          <div id="podcastQueueMsg" class="msg"></div>
+          <p class="small">This queue is shared. Every refresh pulls the latest podcast prompt entries from the remote store.</p>
+        </section>
+      </div>
+
+      <section class="card queue-wrap">
+        <h2>Podcast prompt queue</h2>
+        <div id="podcastStats" class="stats">0 total • 0 pending • 0 complete</div>
+        <div id="podcastQueue" class="empty">Loading…</div>
+      </section>
+    </section>
+
+    <section class="panel hidden" id="panel-promotions">
+      <div class="grid">
+        <section class="card">
+          <h2>Add promotion record</h2>
+          <div class="field">
+            <label for="promoPlatform">Promotion Platform</label>
+            <input id="promoPlatform" type="text" placeholder="Facebook, YouTube, X, Instagram">
+          </div>
+          <div class="field">
+            <label for="promoDate">Date</label>
+            <input id="promoDate" type="date">
+          </div>
+          <div class="field">
+            <label for="promoVideoTitle">Video Title</label>
+            <input id="promoVideoTitle" type="text" placeholder="Video title">
+          </div>
+          <div class="field">
+            <label for="promoPaidBy">Paid by</label>
+            <input id="promoPaidBy" type="text" placeholder="Zach, Han, or other">
+          </div>
+          <div class="field">
+            <label for="promoAmount">Amount ($)</label>
+            <input id="promoAmount" type="number" step="0.01" min="0" placeholder="1000.00">
+          </div>
+          <div class="row">
+            <button class="primary" id="promoSubmitBtn">Add record</button>
+            <button id="promoClearBtn">Clear form</button>
+          </div>
+          <div id="promoSubmitMsg" class="msg"></div>
+          <p class="small">New promotion records are automatically marked <strong>pending</strong>.</p>
+        </section>
+
+        <section class="card">
+          <h2>Promotions controls</h2>
+          <div class="row">
+            <div class="grow field">
+              <label for="promoFilter">Filter</label>
+              <select id="promoFilter">
+                <option value="all">All</option>
+                <option value="pending">Pending</option>
+                <option value="complete">Complete</option>
+              </select>
+            </div>
+          </div>
+          <div class="row">
+            <button class="primary" id="promoRefreshBtn">Refresh records</button>
+            <button class="danger" id="promoDeleteCompletedBtn">Delete completed</button>
+            <button id="promoExportBtn">Export CSV</button>
+          </div>
+          <div id="promoQueueMsg" class="msg"></div>
+          <p class="small">This tracker is shared. Every refresh pulls the latest promotion records from the remote store.</p>
+        </section>
+      </div>
+
+      <section class="card queue-wrap">
+        <h2>Promotions tracker</h2>
+        <div id="promoStats" class="stats">0 total • 0 pending • 0 complete</div>
+        <div id="promoQueue" class="empty">Loading…</div>
+      </section>
+    </section>
+  </div>
 
   <script>
-    (() => {
-      const API_BASE = 'https://jellypod-prompt-queue.fly.dev';
+    const API_BASE = 'https://YOUR-WORKER.workers.dev';
+    const CODE_STORAGE_KEY = 'thwf_shared_code';
+    let accessCode = '';
+    let podcastItems = [];
+    let promoItems = [];
 
-      function api(p) {
-        return API_BASE.replace(/\/+$/, '') + (p.startsWith('/') ? p : '/' + p);
-      }
+    const byId = (id) => document.getElementById(id);
 
-      function msg(el, text, ok = true) {
-        el.textContent = text;
-        el.className = 'msg ' + (ok ? 'ok' : 'err');
-      }
+    function setMsg(el, text, ok = true) {
+      el.textContent = text || '';
+      el.className = 'msg ' + (text ? (ok ? 'ok' : 'err') : '');
+    }
 
-      function escapeHtml(str) {
-        return String(str)
-          .replaceAll('&', '&amp;').replaceAll('<', '&lt;')
-          .replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#39;');
-      }
+    function fmtDate(iso) {
+      try { return new Date(iso).toLocaleString(); } catch { return iso || ''; }
+    }
 
-      async function callJson(url, init = {}) {
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), 15000);
-        try {
-          const res = await fetch(url, { ...init, mode: 'cors', signal: controller.signal });
-          const text = await res.text();
-          const json = text ? JSON.parse(text) : {};
-          if (!res.ok) throw new Error(json.error || json.message || `Server error (${res.status})`);
-          return json;
-        } catch (err) {
-          if (err.name === 'AbortError') throw new Error('Request timed out');
-          if (err instanceof TypeError) throw new Error('Could not reach server');
-          throw err;
-        } finally {
-          clearTimeout(timer);
-        }
-      }
+    function escapeHtml(str) {
+      return String(str ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;');
+    }
 
-      // ---- Submit ----
-      document.getElementById('submitForm').addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const key    = document.getElementById('submitKey').value.trim();
-        const title  = document.getElementById('title').value.trim();
-        const prompt = document.getElementById('prompt').value.trim();
-        const btn    = document.getElementById('submitBtn');
-        const msgEl  = document.getElementById('submitMsg');
-        if (!key || !title || !prompt) return;
-        btn.disabled = true;
-        msg(msgEl, 'Submitting…');
-        try {
-          const data = await callJson(api('/api/submit'), {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ key, title, prompt }),
-          });
-          if (data.ok) {
-            msg(msgEl, 'Submitted successfully.', true);
-            document.getElementById('title').value = '';
-            document.getElementById('prompt').value = '';
-          } else {
-            msg(msgEl, data.error || 'Submit failed', false);
-          }
-        } catch (err) {
-          msg(msgEl, err.message, false);
-        } finally {
-          btn.disabled = false;
-        }
-      });
-
-      // ---- Load queue ----
-      document.getElementById('loadBtn').addEventListener('click', loadQueue);
-
-      async function loadQueue() {
-        const adminKey = document.getElementById('adminKey').value.trim();
-        const msgEl    = document.getElementById('loadMsg');
-        const q        = document.getElementById('queue');
-        if (!adminKey) { msg(msgEl, 'Admin key required', false); return; }
-        q.innerHTML = '';
-        msg(msgEl, 'Loading…');
-        try {
-          const data = await callJson(api('/api/queue?key=') + encodeURIComponent(adminKey));
-          if (!data.ok) throw new Error(data.error || 'Load failed');
-          msg(msgEl, `Loaded ${data.queue?.length || 0} item(s)`, true);
-          renderQueue(data.queue || []);
-        } catch (err) {
-          msg(msgEl, err.message, false);
-        }
-      }
-
-      // ---- Render ----
-      function renderQueue(items) {
-        const q = document.getElementById('queue');
-        q.innerHTML = '';
-        if (items.length === 0) {
-          q.innerHTML = '<p class="meta">Queue is empty.</p>';
-          return;
-        }
-        items.forEach(item => {
-          const div = document.createElement('div');
-          div.className = 'item' + (item.done ? ' done' : '');
-          const created = item.createdAt ? new Date(item.createdAt).toLocaleString() : '';
-          div.innerHTML = `
-            <div><strong>${escapeHtml(item.title || '')}</strong></div>
-            <div class="meta">${item.done ? '✅ Done' : '🟡 Pending'}${created ? ' &bull; ' + escapeHtml(created) : ''}</div>
-            <pre>${escapeHtml(item.prompt || '')}</pre>
-            <div class="row">
-              <button type="button" data-action="copyTitle"  data-id="${escapeHtml(item.id)}">Copy title</button>
-              <button type="button" data-action="copyPrompt" data-id="${escapeHtml(item.id)}">Copy prompt</button>
-              <button type="button" data-action="complete"   data-id="${escapeHtml(item.id)}">Complete</button>
-              <button type="button" data-action="delete"     data-id="${escapeHtml(item.id)}">Delete</button>
-            </div>`;
-          q.appendChild(div);
+    async function api(path, options = {}) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 12000);
+      const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) };
+      try {
+        const res = await fetch(API_BASE.replace(/\/$/, '') + path, {
+          ...options, headers, signal: controller.signal, cache: 'no-store'
         });
-
-        q.onclick = async (event) => {
-          const btn      = event.target.closest('button');
-          if (!btn) return;
-          const action   = btn.dataset.action;
-          const id       = btn.dataset.id;
-          const adminKey = document.getElementById('adminKey').value.trim();
-          const msgEl    = document.getElementById('loadMsg');
-          const item     = items.find(x => String(x.id) === String(id));
-
-          try {
-            if (action === 'copyTitle') {
-              await navigator.clipboard.writeText(item?.title || '');
-              msg(msgEl, 'Title copied', true);
-              return;
-            }
-            if (action === 'copyPrompt') {
-              await navigator.clipboard.writeText(item?.prompt || '');
-              msg(msgEl, 'Prompt copied', true);
-              return;
-            }
-            if (!adminKey) { msg(msgEl, 'Admin key required', false); return; }
-
-            let url, method;
-            if (action === 'complete') {
-              url    = api(`/api/queue/${encodeURIComponent(id)}/complete?key=${encodeURIComponent(adminKey)}`);
-              method = 'POST';
-            } else if (action === 'delete') {
-              url    = api(`/api/queue/${encodeURIComponent(id)}?key=${encodeURIComponent(adminKey)}`);
-              method = 'DELETE';
-            } else return;
-
-            const data = await callJson(url, { method, headers: { 'Content-Type': 'application/json' } });
-            if (!data.ok) throw new Error(data.error || 'Request failed');
-            msg(msgEl, action === 'complete' ? 'Marked complete' : 'Deleted', true);
-            loadQueue();
-          } catch (err) {
-            msg(msgEl, err.message, false);
-          }
-        };
+        clearTimeout(timer);
+        const text = await res.text();
+        let data = {};
+        try { data = text ? JSON.parse(text) : {}; } catch {}
+        if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+        return data;
+      } catch (err) {
+        clearTimeout(timer);
+        if (err.name === 'AbortError') throw new Error('Request timed out. Please try again.');
+        throw err;
       }
-    })();
+    }
+
+    async function unlock() {
+      const code = byId('accessCode').value.trim();
+      if (!code) return setMsg(byId('lockMsg'), 'Enter the admin code.', false);
+      setMsg(byId('lockMsg'), 'Checking…');
+      try {
+        await api(`/api/health?code=${encodeURIComponent(code)}`);
+        accessCode = code;
+        localStorage.setItem(CODE_STORAGE_KEY, code);
+        byId('lockScreen').classList.add('hidden');
+        setMsg(byId('lockMsg'), '');
+        await Promise.all([loadPodcastQueue(), loadPromoQueue()]);
+      } catch (err) {
+        setMsg(byId('lockMsg'), err.message || 'Unlock failed.', false);
+      }
+    }
+
+    function lockApp() {
+      accessCode = '';
+      localStorage.removeItem(CODE_STORAGE_KEY);
+      byId('accessCode').value = '';
+      byId('lockScreen').classList.remove('hidden');
+      setMsg(byId('lockMsg'), 'App locked.', true);
+    }
+
+    async function autoUnlockIfSaved() {
+      const saved = localStorage.getItem(CODE_STORAGE_KEY) || '';
+      if (!saved) return;
+      byId('accessCode').value = saved;
+      await unlock();
+    }
+
+    async function loadPodcastQueue() {
+      setMsg(byId('podcastQueueMsg'), 'Loading…');
+      const data = await api(`/api/podcast?code=${encodeURIComponent(accessCode)}`);
+      podcastItems = Array.isArray(data.items) ? data.items : [];
+      renderPodcastQueue();
+      setMsg(byId('podcastQueueMsg'), `Loaded ${podcastItems.length} podcast item(s).`, true);
+    }
+
+    async function loadPromoQueue() {
+      setMsg(byId('promoQueueMsg'), 'Loading…');
+      const data = await api(`/api/promotions?code=${encodeURIComponent(accessCode)}`);
+      promoItems = Array.isArray(data.items) ? data.items : [];
+      renderPromoQueue();
+      setMsg(byId('promoQueueMsg'), `Loaded ${promoItems.length} promotion record(s).`, true);
+    }
+
+    function podcastStatusStats(items) {
+      const pending = items.filter(x => x.status === 'pending').length;
+      const complete = items.filter(x => x.status === 'complete').length;
+      byId('podcastStats').textContent = `${items.length} total • ${pending} pending • ${complete} complete`;
+    }
+
+    function promoStatusStats(items) {
+      const pending = items.filter(x => x.status === 'pending').length;
+      const complete = items.filter(x => x.status === 'complete').length;
+      byId('promoStats').textContent = `${items.length} total • ${pending} pending • ${complete} complete`;
+    }
+
+    function renderPodcastQueue() {
+      const filter = byId('podcastFilter').value;
+      const items = filter === 'all' ? podcastItems : podcastItems.filter(x => x.status === filter);
+      podcastStatusStats(podcastItems);
+      const el = byId('podcastQueue');
+      if (!items.length) {
+        el.innerHTML = '<div class="empty">No podcast prompt items match this filter.</div>';
+        return;
+      }
+      el.innerHTML = items.map(item => `
+        <div class="item">
+          <div class="title-row">
+            <div class="item-title">${escapeHtml(item.title)}</div>
+            <span class="badge ${item.status === 'complete' ? 'complete' : 'pending'}">${item.status === 'complete' ? 'Complete' : 'Pending'}</span>
+          </div>
+          <div class="stamp">Created ${escapeHtml(fmtDate(item.createdAt))}${item.completedAt ? ` • Completed ${escapeHtml(fmtDate(item.completedAt))}` : ''}</div>
+          <div class="detail-grid">
+            <div class="detail"><div class="k">Host Names</div><div class="v">${escapeHtml(item.hostNames || '—')}</div></div>
+          </div>
+          <div class="prompt">${escapeHtml(item.prompt)}</div>
+          <div class="row">
+            <button data-kind="podcast" data-action="copyTitle" data-id="${escapeHtml(item.id)}">Copy title</button>
+            <button data-kind="podcast" data-action="copyPrompt" data-id="${escapeHtml(item.id)}">Copy prompt</button>
+            ${item.status === 'pending'
+              ? `<button class="warning" data-kind="podcast" data-action="complete" data-id="${escapeHtml(item.id)}">Mark complete</button>`
+              : `<button data-kind="podcast" data-action="pending" data-id="${escapeHtml(item.id)}">Return to pending</button>`}
+            <button class="danger" data-kind="podcast" data-action="delete" data-id="${escapeHtml(item.id)}">Delete</button>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function renderPromoQueue() {
+      const filter = byId('promoFilter').value;
+      const items = filter === 'all' ? promoItems : promoItems.filter(x => x.status === filter);
+      promoStatusStats(promoItems);
+      const el = byId('promoQueue');
+      if (!items.length) {
+        el.innerHTML = '<div class="empty">No promotion records match this filter.</div>';
+        return;
+      }
+      el.innerHTML = items.map(item => `
+        <div class="item">
+          <div class="title-row">
+            <div class="item-title">${escapeHtml(item.videoTitle)}</div>
+            <span class="badge ${item.status === 'complete' ? 'complete' : 'pending'}">${item.status === 'complete' ? 'Complete' : 'Pending'}</span>
+          </div>
+          <div class="stamp">Created ${escapeHtml(fmtDate(item.createdAt))}${item.completedAt ? ` • Completed ${escapeHtml(fmtDate(item.completedAt))}` : ''}</div>
+          <div class="detail-grid">
+            <div class="detail"><div class="k">Platform</div><div class="v">${escapeHtml(item.platform)}</div></div>
+            <div class="detail"><div class="k">Date</div><div class="v">${escapeHtml(item.date || '—')}</div></div>
+            <div class="detail"><div class="k">Paid By</div><div class="v">${escapeHtml(item.paidBy)}</div></div>
+            <div class="detail"><div class="k">Amount</div><div class="v">${item.amount != null ? '$' + Number(item.amount).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}) : '—'}</div></div>
+          </div>
+          <div class="row">
+            <button data-kind="promo" data-action="copyTitle" data-id="${escapeHtml(item.id)}">Copy title</button>
+            ${item.status === 'pending'
+              ? `<button class="warning" data-kind="promo" data-action="complete" data-id="${escapeHtml(item.id)}">Mark complete</button>`
+              : `<button data-kind="promo" data-action="pending" data-id="${escapeHtml(item.id)}">Return to pending</button>`}
+            <button class="danger" data-kind="promo" data-action="delete" data-id="${escapeHtml(item.id)}">Delete</button>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    async function submitPodcast() {
+      const title = byId('podcastTitle').value.trim();
+      const hostNames = byId('hostNames').value.trim();
+      const prompt = byId('podcastPrompt').value.trim();
+      if (!title || !prompt) return setMsg(byId('podcastSubmitMsg'), 'Title and prompt are required.', false);
+      if (hostNames.length > 30) return setMsg(byId('podcastSubmitMsg'), 'Host Names must be 30 characters or fewer.', false);
+      setMsg(byId('podcastSubmitMsg'), 'Submitting…');
+      try {
+        await api('/api/podcast', {
+          method: 'POST',
+          body: JSON.stringify({ code: accessCode, title, hostNames, prompt })
+        });
+        byId('podcastTitle').value = '';
+        byId('hostNames').value = '';
+        byId('podcastPrompt').value = '';
+        setMsg(byId('podcastSubmitMsg'), 'Podcast prompt submitted.', true);
+        await loadPodcastQueue();
+      } catch (err) {
+        setMsg(byId('podcastSubmitMsg'), err.message || 'Submit failed.', false);
+      }
+    }
+
+    async function submitPromo() {
+      const platform = byId('promoPlatform').value.trim();
+      const date = byId('promoDate').value;
+      const videoTitle = byId('promoVideoTitle').value.trim();
+      const paidBy = byId('promoPaidBy').value.trim();
+      const amountRaw = byId('promoAmount').value.trim();
+      const amount = amountRaw !== '' ? parseFloat(amountRaw) : null;
+      if (!platform || !date || !videoTitle || !paidBy) return setMsg(byId('promoSubmitMsg'), 'All promotion fields are required.', false);
+      setMsg(byId('promoSubmitMsg'), 'Saving…');
+      try {
+        await api('/api/promotions', {
+          method: 'POST',
+          body: JSON.stringify({ code: accessCode, platform, date, videoTitle, paidBy, amount })
+        });
+        byId('promoPlatform').value = '';
+        byId('promoDate').value = '';
+        byId('promoVideoTitle').value = '';
+        byId('promoPaidBy').value = '';
+        byId('promoAmount').value = '';
+        setMsg(byId('promoSubmitMsg'), 'Promotion record saved.', true);
+        await loadPromoQueue();
+      } catch (err) {
+        setMsg(byId('promoSubmitMsg'), err.message || 'Save failed.', false);
+      }
+    }
+
+    async function updateItem(kind, id, action) {
+      const base = kind === 'podcast' ? '/api/podcast/' : '/api/promotions/';
+      const msgEl = kind === 'podcast' ? byId('podcastQueueMsg') : byId('promoQueueMsg');
+      try {
+        if (action === 'copyTitle') {
+          const source = kind === 'podcast' ? podcastItems : promoItems;
+          const item = source.find(x => x.id === id);
+          await navigator.clipboard.writeText(kind === 'podcast' ? (item?.title || '') : (item?.videoTitle || ''));
+          return setMsg(msgEl, 'Copied to clipboard.', true);
+        }
+        if (action === 'copyPrompt') {
+          const item = podcastItems.find(x => x.id === id);
+          await navigator.clipboard.writeText(item?.prompt || '');
+          return setMsg(msgEl, 'Copied to clipboard.', true);
+        }
+
+        setMsg(msgEl, 'Updating…');
+        if (action === 'delete') {
+          await api(base + encodeURIComponent(id), {
+            method: 'DELETE',
+            body: JSON.stringify({ code: accessCode })
+          });
+        } else {
+          await api(base + encodeURIComponent(id) + '/' + action, {
+            method: 'POST',
+            body: JSON.stringify({ code: accessCode })
+          });
+        }
+        if (kind === 'podcast') await loadPodcastQueue(); else await loadPromoQueue();
+      } catch (err) {
+        setMsg(msgEl, err.message || 'Update failed.', false);
+      }
+    }
+
+    function exportPromoCSV() {
+      if (!promoItems.length) {
+        setMsg(byId('promoQueueMsg'), 'No records loaded to export.', false);
+        return;
+      }
+      const headers = ['id', 'videoTitle', 'platform', 'date', 'paidBy', 'amount', 'status', 'createdAt', 'completedAt'];
+      const rows = promoItems.map(item =>
+        headers.map(h => {
+          if ((h === 'createdAt' || h === 'completedAt') && item[h])
+            return '"' + fmtDate(item[h]).replace(/"/g, '""') + '"';
+          const v = item[h] != null ? String(item[h]) : '';
+          return '"' + v.replace(/"/g, '""') + '"';
+        }).join(',')
+      );
+      const csv = [headers.join(','), ...rows].join('\n');
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'promotions-' + new Date().toISOString().slice(0, 10) + '.csv';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      setMsg(byId('promoQueueMsg'), 'Exported ' + promoItems.length + ' record(s).', true);
+    }
+
+    async function deleteCompleted(kind) {
+      const path = kind === 'podcast' ? '/api/podcast/completed' : '/api/promotions/completed';
+      const msgEl = kind === 'podcast' ? byId('podcastQueueMsg') : byId('promoQueueMsg');
+      setMsg(msgEl, 'Deleting completed items…');
+      try {
+        await api(path, { method: 'DELETE', body: JSON.stringify({ code: accessCode }) });
+        if (kind === 'podcast') await loadPodcastQueue(); else await loadPromoQueue();
+        setMsg(msgEl, 'Completed items deleted.', true);
+      } catch (err) {
+        setMsg(msgEl, err.message || 'Delete failed.', false);
+      }
+    }
+
+    function switchTab(tab) {
+      document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.tab === tab));
+      byId('panel-podcast').classList.toggle('hidden', tab !== 'podcast');
+      byId('panel-promotions').classList.toggle('hidden', tab !== 'promotions');
+    }
+
+    document.addEventListener('click', (event) => {
+      const tabBtn = event.target.closest('.tab-btn');
+      if (tabBtn) switchTab(tabBtn.dataset.tab);
+
+      const actionBtn = event.target.closest('button[data-kind][data-action][data-id]');
+      if (actionBtn) updateItem(actionBtn.dataset.kind, actionBtn.dataset.id, actionBtn.dataset.action);
+    });
+
+    byId('unlockBtn').addEventListener('click', unlock);
+    byId('accessCode').addEventListener('keydown', (e) => { if (e.key === 'Enter') unlock(); });
+    byId('lockBtn').addEventListener('click', lockApp);
+
+    byId('podcastSubmitBtn').addEventListener('click', submitPodcast);
+    byId('podcastClearBtn').addEventListener('click', () => {
+      byId('podcastTitle').value = '';
+      byId('hostNames').value = '';
+      byId('podcastPrompt').value = '';
+      setMsg(byId('podcastSubmitMsg'), '');
+    });
+    byId('podcastRefreshBtn').addEventListener('click', loadPodcastQueue);
+    byId('podcastDeleteCompletedBtn').addEventListener('click', () => deleteCompleted('podcast'));
+    byId('podcastFilter').addEventListener('change', renderPodcastQueue);
+
+    byId('promoSubmitBtn').addEventListener('click', submitPromo);
+    byId('promoClearBtn').addEventListener('click', () => {
+      byId('promoPlatform').value = '';
+      byId('promoDate').value = '';
+      byId('promoVideoTitle').value = '';
+      byId('promoPaidBy').value = '';
+      byId('promoAmount').value = '';
+      setMsg(byId('promoSubmitMsg'), '');
+    });
+    byId('promoRefreshBtn').addEventListener('click', loadPromoQueue);
+    byId('promoDeleteCompletedBtn').addEventListener('click', () => deleteCompleted('promo'));
+    byId('promoExportBtn').addEventListener('click', exportPromoCSV);
+    byId('promoFilter').addEventListener('change', renderPromoQueue);
+
+    setTimeout(autoUnlockIfSaved, 0);
   </script>
 </body>
 </html>
